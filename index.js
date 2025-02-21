@@ -1,58 +1,137 @@
-const express =require('express')
-const cors =require('cors')
-const app =express()
-const jwt =require('jsonwebtoken')
+const express = require('express');
+const cors = require('cors');
+const { Server } = require('socket.io');
+const http = require('http');
+require('dotenv').config();
 
-require('dotenv').config()
+const app = express();
 
-const port =process.env.port || 5000
+// HTTP Server and Socket.io setup
+const port = process.env.PORT || 5000; // Ensure PORT is uppercase
+const server = http.createServer(app); 
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  },
+});
 
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// QmGJ433goSq1u7wE
-// task-management
-
-// middleware
-app.use(cors())
-app.use(express.json())
-
-
-const { MongoClient, ServerApiVersion, ObjectId, ReturnDocument } = require('mongodb');
+// MongoDB setup
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.jwr0f.mongodb.net/?retryWrites=true&w=majority&appName=Cluster01`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    await client.connect();
 
+    const userCollection = client.db('task-management').collection('users');
+    const taskCollection = client.db('task-management').collection('tasks');
 
+    io.on('connection', (socket) => {
+      console.log('A user connected');
+      socket.on('disconnect', () => {
+        console.log('User disconnected');
+      });
+    });
 
+    // Routes
 
+    // Get all users
+    app.get('/users', async (req, res) => {
+      const cursor = userCollection.find({});
+      const users = await cursor.toArray();
+      res.send(users);
+    });
 
+    // Create new user
+    app.post('/users', async (req, res) => {
+      const newUser = req.body;
+      const query = { email: newUser.email };
+      const existingUser = await userCollection.findOne(query);
+      if (existingUser) {
+        return res.send({ message: 'User already exists', insertedId: null });
+      }
+      const result = await userCollection.insertOne(newUser);
+      res.send(result);
+    });
 
-    // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
-    // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // Add task
+    app.post('/tasks', async (req, res) => {
+      const task = req.body;
+      const result = await taskCollection.insertOne(task);
+      io.emit('newTask', task); // Broadcast new task to all clients
+      res.send(result);
+    });
+
+    // Get all tasks
+    app.get('/tasks', async (req, res) => {
+      const cursor = taskCollection.find({});
+      const tasks = await cursor.toArray();
+      res.send(tasks);
+    });
+
+    // Get single task by ID
+    app.get('/tasks/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const task = await taskCollection.findOne(query);
+      res.send(task);
+    });
+
+    // Delete task
+    app.delete('/tasks/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await taskCollection.deleteOne(query);
+      io.emit('newTask', result); // Broadcast task deletion to all clients
+      res.send(result);
+    });
+
+    // Update task
+    app.patch('/tasks/:id', async (req, res) => {
+      const id = req.params.id;
+      const updatedTask = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updatedDocument = {
+        $set: updatedTask,
+      };
+      const result = await taskCollection.findOneAndUpdate(
+        query,
+        updatedDocument,
+        { returnDocument: 'after' }
+      );
+      io.emit('newTask', updatedTask); // Broadcast updated task to all clients
+      res.send(result);
+    });
+
+    // Test MongoDB connection
+    await client.db('admin').command({ ping: 1 });
+    console.log('Successfully connected to MongoDB!');
   } finally {
-    // Ensures that the client will close when you finish/error
+    // Ensure client will close when finished
     // await client.close();
   }
 }
 run().catch(console.dir);
 
+// Root route
+app.get('/', (req, res) => {
+  res.send('Task API is waiting...');
+});
 
-app.get('/', (req, res)=>{
-    res.send('task is waitting')
-})
-
-app.listen(port, ()=>{
-    console.log('task are ready')
-})
+// Start the server
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
