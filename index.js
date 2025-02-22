@@ -40,9 +40,9 @@ async function run() {
     const taskCollection = client.db('task-management').collection('tasks');
 
     io.on('connection', (socket) => {
-      console.log('A user connected');
+      // console.log('A user connected');
       socket.on('disconnect', () => {
-        console.log('User disconnected');
+        // console.log('User disconnected');
       });
     });
 
@@ -85,6 +85,7 @@ async function run() {
     // Get single task by ID
     app.get('/tasks/:id', async (req, res) => {
       const id = req.params.id;
+      
       const query = { _id: new ObjectId(id) };
       const task = await taskCollection.findOne(query);
       res.send(task);
