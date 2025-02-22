@@ -118,6 +118,28 @@ async function run() {
       res.send(result);
     });
 
+
+    // update category drag and drop
+    app.patch("/tasks/category/:id", async (req, res) => {
+      const { id } = req.params;
+      const { category } = req.body;
+    
+      try {
+        const result = await db.collection("tasks").updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { category } }
+        );
+    
+        if (result.matchedCount === 0) {
+          return res.status(404).json({ message: "Task not found" });
+        }
+    
+        res.json({ message: "Task updated successfully" });
+      } catch (error) {
+        res.status(500).json({ message: "Error updating task", error });
+      }
+    });
+
     // Test MongoDB connection
     // await client.db('admin').command({ ping: 1 });
     // console.log('Successfully connected to MongoDB!');
